@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EcoBetim — Painel</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --green:#1f8a4c; --green-dark:#15672f; --green-light:#e6f5eb;
+    --bg:#f7faf8; --card:#ffffff; --text:#16241c; --muted:#5a6b62; --border:#e1e9e3;
+    box-sizing:border-box; padding-top: env(safe-area-inset-top,0px); padding-bottom: env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0f1712;--card:#17211b;--text:#eaf3ee;--muted:#9db2a7;--border:#25322b;--green-light:#152a1e;}}
+  :root[data-theme="dark"]{--bg:#0f1712;--card:#17211b;--text:#eaf3ee;--muted:#9db2a7;--border:#25322b;--green-light:#152a1e;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;line-height:1.5;}
+  h1,h2,h3{font-family:Poppins,system-ui,sans-serif;margin:0 0 8px;}
+  .wrap{max-width:920px;margin:0 auto;padding:0 20px;}
+  header.top{position:sticky;top:env(safe-area-inset-top,0px);background:var(--card);border-bottom:1px solid var(--border);z-index:10;}
+  header.top .wrap{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-family:Poppins,sans-serif;font-size:1.1rem;cursor:pointer;}
+  .points-pill{background:var(--green);color:#fff;padding:6px 14px;border-radius:999px;font-weight:600;font-size:.9rem;display:flex;gap:6px;align-items:center;}
+  .hero{padding:36px 0 20px;text-align:center;}
+  .hero p{color:var(--muted);max-width:520px;margin:8px auto 0;}
+  .tag{display:inline-block;background:var(--green-light);color:var(--green-dark);padding:4px 12px;border-radius:999px;font-size:.78rem;font-weight:600;}
+  nav.tabs{display:flex;gap:6px;justify-content:center;margin:22px 0 0;flex-wrap:wrap;}
+  nav.tabs button{border:1px solid var(--border);background:var(--card);color:var(--text);padding:9px 16px;border-radius:10px;font-weight:600;font-size:.88rem;cursor:pointer;}
+  nav.tabs button.active{background:var(--green);border-color:var(--green);color:#fff;}
+  section.panel{display:none;padding:22px 0 60px;}
+  section.panel.active{display:block;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:600px){.grid2{grid-template-columns:1fr;}}
+  #realMap{position:relative;width:100%;aspect-ratio:16/10;border-radius:14px;border:1px solid var(--border);overflow:hidden;z-index:0;}
+  .points-list{display:flex;flex-direction:column;gap:10px;}
+  .point-item{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
+  .point-item h4{margin:0 0 4px;font-size:.98rem;}
+  .point-item p{margin:0;color:var(--muted);font-size:.84rem;}
+  .chip{background:var(--green-light);color:var(--green-dark);font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;}
+  .addr-chip{background:#fff4d6;color:#8a6100;}
+  label{display:block;font-weight:600;font-size:.85rem;margin:12px 0 6px;}
+  select,input[type=range]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:.92rem;}
+  .qty-row{display:flex;align-items:center;gap:12px;}
+  .qty-row output{font-weight:700;min-width:28px;text-align:center;}
+  button.primary{background:var(--green);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:700;font-size:.95rem;cursor:pointer;width:100%;margin-top:16px;}
+  button.ghost{background:transparent;border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer;font-size:.85rem;width:100%;margin-top:10px;}
+  .stat{background:var(--green-light);border-radius:12px;padding:14px;text-align:center;}
+  .stat b{display:block;font-size:1.6rem;color:var(--green-dark);font-family:Poppins,sans-serif;}
+  .stat span{font-size:.78rem;color:var(--muted);}
+  .reward{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;}
+  .reward div h4{margin:0 0 2px;font-size:.95rem;}
+  .reward div p{margin:0;color:var(--muted);font-size:.8rem;}
+  .history-item{font-size:.85rem;padding:8px 0;border-bottom:1px dashed var(--border);display:flex;justify-content:space-between;}
+  .empty{color:var(--muted);font-size:.86rem;text-align:center;padding:20px 0;}
+  .note{font-size:.78rem;color:var(--muted);background:var(--green-light);border-radius:10px;padding:10px 12px;margin-top:14px;}
+  footer{text-align:center;color:var(--muted);font-size:.78rem;padding:20px 0 40px;}
+  .user-label{font-size:.8rem;color:var(--muted);margin-right:8px;}
+  .hub-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:24px;}
+  @media(max-width:600px){.hub-grid{grid-template-columns:1fr;}}
+  .hub-btn{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;text-align:left;cursor:pointer;font-family:inherit;}
+  .hub-btn .icon{font-size:1.7rem;display:block;margin-bottom:8px;}
+  .hub-btn h4{margin:0 0 4px;font-family:Poppins,sans-serif;font-size:1rem;}
+  .hub-btn p{margin:0;color:var(--muted);font-size:.83rem;}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand" id="brandHome">♻️ EcoBetim</div>
+    <div style="display:flex;align-items:center;">
+      <span class="user-label">Olá, <%= user.name %></span>
+      <div class="points-pill">⭐ <span id="headerPoints">0</span> pts</div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="hub">Início</button>
+    <button class="tab-btn" data-tab="mapa">Onde Descartar</button>
+    <button class="tab-btn" data-tab="registrar">Registrar Descarte</button>
+    <button class="tab-btn" data-tab="recompensas">Recompensas</button>
+    <button class="tab-btn" data-tab="perfil">Meu Progresso</button>
+  </nav>
+
+  <section class="panel active" id="hub">
+    <div class="hero">
+      <span class="tag">Hackathon · Descarte Irregular em Betim/MG</span>
+      <h1>Descarte certo. Cidade limpa. Você recompensado.</h1>
+      <p>Encontre pontos de descarte perto de você, registre o que descartou e ganhe recompensas reais por manter Betim mais limpa.</p>
+    </div>
+    <div class="hub-grid">
+      <button class="hub-btn" data-tab="mapa"><span class="icon">📍</span><h4>Onde Descartar</h4><p>Veja o mapa e a lista de pontos de coleta pela cidade.</p></button>
+      <button class="hub-btn" data-tab="registrar"><span class="icon">➕</span><h4>Registrar Descarte</h4><p>Diga o que e onde você descartou para ganhar pontos.</p></button>
+      <button class="hub-btn" data-tab="recompensas"><span class="icon">🎁</span><h4>Recompensas</h4><p>Troque seus pontos por benefícios e recompensas locais.</p></button>
+      <button class="hub-btn" data-tab="perfil"><span class="icon">📊</span><h4>Meu Progresso</h4><p>Acompanhe seus pontos e seu histórico de descartes.</p></button>
+    </div>
+  </section>
+
+  <section class="panel" id="mapa">
+    <div class="card">
+      <h3>Mapa de Betim</h3>
+      <div id="realMap"></div>
+      <p class="note">📍 Coordenadas dos pontos reais ainda são aproximadas — confirme no Google Maps antes da apresentação final.</p>
+    </div>
+    <div class="card">
+      <h3>Pontos de descarte</h3>
+      <div class="points-list" id="pointsList"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="registrar">
+    <div class="card">
+      <h3>Registrar um descarte</h3>
+      <label for="matSelect">Tipo de material</label>
+      <select id="matSelect"></select>
+      <label for="ptSelect">Onde você descartou</label>
+      <select id="ptSelect"></select>
+      <label>Quantidade estimada (unidades/kg)</label>
+      <div class="qty-row">
+        <input type="range" id="qtyRange" min="1" max="10" value="1">
+        <output id="qtyOut">1</output>
+      </div>
+      <button class="primary" id="submitBtn">Confirmar descarte e ganhar pontos</button>
+      <p class="note" id="pointsPreview"></p>
+    </div>
+    <div class="card">
+      <h3>Histórico</h3>
+      <div id="historyList"><p class="empty">Nenhum descarte registrado ainda.</p></div>
+    </div>
+  </section>
+
+  <section class="panel" id="recompensas">
+    <div class="card">
+      <h3>Catálogo de recompensas</h3>
+      <div id="rewardsList"></div>
+      <p class="note">Protótipo: os resgates aqui ainda são simulados (guardados só neste navegador).</p>
+    </div>
+  </section>
+
+  <section class="panel" id="perfil">
+    <div class="grid2">
+      <div class="stat"><b id="statPoints">0</b><span>pontos disponíveis</span></div>
+      <div class="stat"><b id="statItems">0</b><span>descartes registrados</span></div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <h3>Resgates feitos</h3>
+      <div id="redeemHistory"><p class="empty">Nenhum resgate ainda.</p></div>
+    </div>
+    <button class="ghost" id="resetBtn">Zerar dados de demonstração</button>
+    <form method="POST" action="/logout">
+      <input type="hidden" name="csrf" value="<%= csrf %>">
+      <button class="ghost" type="submit">Sair</button>
+    </form>
+    <p class="note">Login e senha ficam seguros no banco do servidor. Pontos e histórico de descarte ainda ficam salvos só neste navegador (próximo passo: mover isso pro banco também).</p>
+  </section>
+
+  <footer>Protótipo de hackathon — Tema: soluções para descarte irregular em Betim/MG</footer>
+</div>
+
+<script>
+const MATERIALS = [
+  {id:'papelao', name:'Papelão / Papel', pts:5},
+  {id:'plastico', name:'Plástico', pts:5},
+  {id:'vidro', name:'Vidro', pts:4},
+  {id:'metal', name:'Metal', pts:8},
+  {id:'eletronico', name:'Eletrônico (e-lixo)', pts:15},
+  {id:'oleo', name:'Óleo de cozinha usado', pts:10},
+  {id:'pilha', name:'Pilhas / Baterias', pts:12},
+];
+
+const POINTS = [
+  {id:'p1', name:'Ponto Exemplo — Centro', bairro:'Centro', endereco:'', aceita:'Papel, plástico, vidro, metal', real:false, lat:-19.9678, lng:-44.1979},
+  {id:'p2', name:'Ponto Exemplo — Citrolândia', bairro:'Citrolândia', endereco:'', aceita:'Eletrônicos, pilhas, óleo', real:false, lat:-19.9430, lng:-44.2330},
+  {id:'p3', name:'Ponto Exemplo — PTB', bairro:'PTB', endereco:'', aceita:'Recicláveis em geral', real:false, lat:-19.9200, lng:-44.1750},
+  {id:'p4', name:'Ponto Exemplo — Alterosa', bairro:'Alterosa', endereco:'', aceita:'Móveis, entulho pequeno', real:false, lat:-19.9900, lng:-44.2050},
+  {id:'p5', name:'Ponto Exemplo — Icaivera', bairro:'Icaivera', endereco:'', aceita:'Recicláveis, óleo', real:false, lat:-19.9550, lng:-44.1600},
+  {id:'p6', name:'Ponto — Capelinha', bairro:'Capelinha', endereco:'Rua Espanha, nº 400', aceita:'Pequenos volumes', real:true, lat:-19.9550, lng:-44.2200},
+  {id:'p7', name:'Ponto — Vila Cristina (Barra Longa)', bairro:'Vila Cristina', endereco:'Rua Barra Longa', aceita:'Pequenos volumes', real:true, lat:-19.9750, lng:-44.1850},
+  {id:'p8', name:'Ponto — Jardim Pérola', bairro:'Jardim Pérola', endereco:'Av. Luiza de Jesus Barbosa', aceita:'Pequenos volumes', real:true, lat:-19.9850, lng:-44.1700},
+  {id:'p9', name:'Ponto — Vila Cristina (Rua Dez)', bairro:'Vila Cristina', endereco:'Rua Dez, nº 345', aceita:'Pequenos volumes', real:true, lat:-19.9720, lng:-44.1900},
+  {id:'p10', name:'Ponto — Granja Verde', bairro:'Granja Verde', endereco:'Rua Um', aceita:'Pequenos volumes', real:true, lat:-19.9300, lng:-44.2100},
+  {id:'p11', name:'Ponto — Av. Juiz Marco Túlio Isaac', bairro:'Betim', endereco:'Av. Juiz Marco Túlio Isaac', aceita:'Pequenos volumes', real:true, lat:-19.9600, lng:-44.2050},
+  {id:'p12', name:'Ponto — Teresópolis', bairro:'Teresópolis', endereco:'Rua Jequié, 178', aceita:'Pequenos volumes', real:true, lat:-19.9450, lng:-44.1850},
+];
+
+const REWARDS = [
+  {id:'r1', name:'Desconto 10% em loja parceira', cost:50},
+  {id:'r2', name:'Muda de árvore nativa', cost:100},
+  {id:'r3', name:'Passagem de ônibus municipal', cost:200},
+  {id:'r4', name:'Kit de compostagem doméstica', cost:500},
+];
+
+const KEY = 'ecobetim_state_v1';
+
+function loadState(){
+  try{ const raw = localStorage.getItem(KEY); if(raw) return JSON.parse(raw); }catch(e){}
+  return {points:0, history:[], redeemed:[]};
+}
+function saveState(s){ try{ localStorage.setItem(KEY, JSON.stringify(s)); }catch(e){} }
+let state = loadState();
+
+function activateTab(tabId){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tabId));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id===tabId));
+  if(tabId==='mapa') setTimeout(()=>leafletMap.invalidateSize(), 50);
+}
+document.querySelectorAll('.tab-btn').forEach(btn=>btn.addEventListener('click', ()=> activateTab(btn.dataset.tab)));
+document.querySelectorAll('.hub-btn').forEach(btn=>btn.addEventListener('click', ()=> activateTab(btn.dataset.tab)));
+document.getElementById('brandHome').addEventListener('click', ()=> activateTab('hub'));
+
+const leafletMap = L.map('realMap').setView([-19.9678, -44.1979], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap contribuidores'
+}).addTo(leafletMap);
+const greenIcon = L.divIcon({ className:'', html:'<div style="width:16px;height:16px;background:#1f8a4c;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(45deg);box-shadow:0 2px 6px rgba(0,0,0,.3);"></div>', iconSize:[16,16], iconAnchor:[8,16] });
+POINTS.forEach(p=>{
+  L.marker([p.lat, p.lng], {icon:greenIcon}).addTo(leafletMap)
+    .bindPopup(`<b>${p.name}</b><br>${p.endereco ? p.endereco+'<br>' : ''}Bairro: ${p.bairro}<br>Aceita: ${p.aceita}`);
+});
+
+const pointsListEl = document.getElementById('pointsList');
+pointsListEl.innerHTML = POINTS.map(p=>`
+  <div class="point-item">
+    <div><h4>${p.name}</h4><p>${p.endereco ? p.endereco+' — ' : ''}Bairro: ${p.bairro} · Aceita: ${p.aceita}</p></div>
+    <span class="chip ${p.real ? 'addr-chip' : ''}">${p.real ? 'endereço real' : 'exemplo'}</span>
+  </div>`).join('');
+
+const matSelect = document.getElementById('matSelect');
+matSelect.innerHTML = MATERIALS.map(m=>`<option value="${m.id}">${m.name} (${m.pts} pts/un.)</option>`).join('');
+const ptSelect = document.getElementById('ptSelect');
+ptSelect.innerHTML = POINTS.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+
+const qtyRange = document.getElementById('qtyRange');
+const qtyOut = document.getElementById('qtyOut');
+const pointsPreview = document.getElementById('pointsPreview');
+function updatePreview(){
+  qtyOut.textContent = qtyRange.value;
+  const mat = MATERIALS.find(m=>m.id===matSelect.value);
+  pointsPreview.textContent = `Você vai ganhar ${mat.pts * Number(qtyRange.value)} pontos por este descarte.`;
+}
+matSelect.addEventListener('change', updatePreview);
+qtyRange.addEventListener('input', updatePreview);
+updatePreview();
+
+document.getElementById('submitBtn').addEventListener('click', ()=>{
+  const mat = MATERIALS.find(m=>m.id===matSelect.value);
+  const pt = POINTS.find(p=>p.id===ptSelect.value);
+  const qty = Number(qtyRange.value);
+  const earned = mat.pts * qty;
+  state.points += earned;
+  state.history.unshift({mat:mat.name, pt:pt.name, qty, earned, date:new Date().toLocaleString('pt-BR')});
+  saveState(state);
+  render();
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  state = {points:0, history:[], redeemed:[]};
+  saveState(state);
+  render();
+});
+
+function renderRewards(){
+  const el = document.getElementById('rewardsList');
+  el.innerHTML = REWARDS.map(r=>`
+    <div class="reward">
+      <div><h4>${r.name}</h4><p>${r.cost} pontos</p></div>
+      <button class="ghost" style="width:auto;margin:0;" data-reward="${r.id}" ${state.points < r.cost ? 'disabled style="opacity:.5"' : ''}>Resgatar</button>
+    </div>`).join('');
+  el.querySelectorAll('button[data-reward]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const r = REWARDS.find(x=>x.id===btn.dataset.reward);
+      if(state.points >= r.cost){
+        state.points -= r.cost;
+        state.redeemed.unshift({name:r.name, cost:r.cost, date:new Date().toLocaleString('pt-BR')});
+        saveState(state);
+        render();
+      }
+    });
+  });
+}
+
+function render(){
+  document.getElementById('headerPoints').textContent = state.points;
+  document.getElementById('statPoints').textContent = state.points;
+  document.getElementById('statItems').textContent = state.history.length;
+  const hEl = document.getElementById('historyList');
+  hEl.innerHTML = state.history.length
+    ? state.history.map(h=>`<div class="history-item"><span>${h.mat} × ${h.qty} — ${h.pt}</span><b>+${h.earned} pts</b></div>`).join('')
+    : '<p class="empty">Nenhum descarte registrado ainda.</p>';
+  const rEl = document.getElementById('redeemHistory');
+  rEl.innerHTML = state.redeemed.length
+    ? state.redeemed.map(r=>`<div class="history-item"><span>${r.name}</span><b>-${r.cost} pts</b></div>`).join('')
+    : '<p class="empty">Nenhum resgate ainda.</p>';
+  renderRewards();
+}
+render();
+</script>
+</body>
+</html>
