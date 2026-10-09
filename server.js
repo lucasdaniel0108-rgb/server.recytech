@@ -68,6 +68,7 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET } = {}) {
     next();
   });
   app.use(helmet({
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     contentSecurityPolicy: {
       directives: {
         scriptSrc: ["'self'", 'https://unpkg.com', (req, res) => `'nonce-${res.locals.nonce}'`],
