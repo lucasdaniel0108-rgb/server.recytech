@@ -7,6 +7,9 @@ const { randomBytes, scrypt, timingSafeEqual } = require('node:crypto');
 const { promisify } = require('node:util');
 const { mkdirSync } = require('node:fs');
 const path = require('node:path');
+const { registerPosts, createPostsTable } = require('./posts');
+const { registerActivity, createActivityTables } = require('./activity');
+const { catalogJson } = require('./catalog');
 const derive = promisify(scrypt);
 const DAY = 86400000;
 
@@ -44,7 +47,7 @@ class SQLiteStore extends session.Store {
   touch(id, value, callback) { this.set(id, value, callback); }
 }
 
-function createApp({ databasePath, secret = process.env.SESSION_SECRET } = {}) {
+function createApp({ databasePath, secret = process.env.SESSION_SECRET, uploadsDir = path.join(__dirname, 'data', 'uploads') } = {}) {
   const production = process.env.NODE_ENV === 'production';
   if (production && (!secret || secret.length < 32)) throw new Error('Defina SESSION_SECRET com pelo menos 32 caracteres.');
   if (!databasePath) {
@@ -58,6 +61,8 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET } = {}) {
       password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, value TEXT NOT NULL, expires INTEGER NOT NULL);`);
+  createPostsTable(db);
+  createActivityTables(db);
   const app = express();
   if (production) app.set('trust proxy', 1);
   app.locals.db = db;
@@ -78,6 +83,7 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET } = {}) {
   }));
   app.use(express.static(path.join(__dirname, 'public')));
   app.use(express.urlencoded({ extended: false, limit: '10kb' }));
+  app.use('/api', express.json({ limit: '2.5mb' }));
   app.use(session({
     name: 'login.sid', secret: secret || randomBytes(32).toString('hex'),
     store: new SQLiteStore(db), resave: false, saveUninitialized: false,
@@ -87,7 +93,7 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET } = {}) {
     res.set('Cache-Control', 'no-store');
     req.session.csrf ||= randomBytes(32).toString('hex');
     res.locals.csrf = req.session.csrf;
-    if (req.method === 'POST' && req.body.csrf !== req.session.csrf) {
+    if (req.method === 'POST' && req.body?.csrf !== req.session.csrf) {
       return res.status(403).send('Formulário expirado ou inválido. Recarregue a página.');
     }
     next();
@@ -95,6 +101,14 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET } = {}) {
   const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20,
     standardHeaders: 'draft-8', legacyHeaders: false,
     message: 'Muitas tentativas. Aguarde 15 minutos e tente novamente.' });
+  const postLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20,
+    standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: req => `user:${req.session.userId}`,
+    message: { error: 'Muitas postagens em pouco tempo. Tente novamente mais tarde.' } });
+  const disposalLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 30,
+    standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: req => `user:${req.session.userId}`,
+    message: { error: 'Muitos registros em pouco tempo. Tente novamente mais tarde.' } });
   const page = (res, mode, error = null, values = {}, status = 200) =>
     res.status(status).render('auth', { mode, error, values });
   const authenticated = (req, res, next) => req.session.userId ? next() : res.redirect('/login');
@@ -146,7 +160,7 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET } = {}) {
   app.get('/painel', authenticated, (req, res) => {
     const user = db.prepare('SELECT id, name, email, created_at FROM users WHERE id = ?').get(req.session.userId);
     if (!user) return req.session.destroy(() => res.redirect('/login'));
-    res.render('dashboard', { user });
+    res.render('dashboard', { user, catalogJson });
   });
   app.post('/logout', authenticated, (req, res, next) => {
     req.session.destroy(error => {
@@ -155,10 +169,12 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET } = {}) {
       res.redirect('/login');
     });
   });
+  registerPosts(app, { db, uploadsDir, postLimiter });
+  registerActivity(app, { db, disposalLimiter });
   app.use((req, res) => res.status(404).send('Página não encontrada.'));
   app.use((error, req, res, next) => {
     console.error(error);
-    res.status(500).send('Não foi possível concluir a operação. Tente novamente.');
+    res.status(error.status >= 400 && error.status < 500 ? error.status : 500).send('Não foi possível concluir a operação. Tente novamente.');
   });
   return app;
 }
