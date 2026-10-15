@@ -11,6 +11,8 @@ const INVITE_DAYS = 7;
 const MAX_PENDING = 3;
 const MAX_OPEN_INVITES = 30;
 const DAILY_VALIDATION_LIMIT = 5;
+const LOCAL_OFFSET_MS = 3 * 3600000;
+const FLOW_PERIODS = [7, 14, 30];
 const REJECT_REASONS = ['Material diferente do declarado', 'Material não aceito neste ponto', 'Quantidade não confere', 'Outro motivo'];
 
 const sqlTime = date => date.toISOString().slice(0, 19).replace('T', ' ');
@@ -278,6 +280,44 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
         material: row.final_material || row.material, qty: row.final_qty || row.qty, points: row.points,
         rejectReason: row.reject_reason, validatedAt: row.validated_at
       }))
+    });
+  });
+
+  app.get('/api/monitor/flow', apiAuth, staffOnly, (req, res) => {
+    const asked = Number(req.query && req.query.days);
+    const days = FLOW_PERIODS.includes(asked) ? asked : 14;
+    const moment = now();
+    const localNow = new Date(moment.getTime() - LOCAL_OFFSET_MS);
+    const today = Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate());
+    const labels = Array.from({ length: days }, (_, i) => new Date(today - (days - 1 - i) * 86400000).toISOString().slice(0, 10));
+    const since = sqlTime(new Date(today - (days - 1) * 86400000 + LOCAL_OFFSET_MS));
+    const scoped = req.staff.role === 'admin' ? POINTS : POINTS.filter(point => point.id === req.staff.point_id);
+    const rows = db.prepare(`SELECT point_id, date(COALESCE(validated_at, created_at), '-3 hours') AS day,
+        COALESCE(SUM(CASE WHEN status = 'validado' THEN 1 ELSE 0 END), 0) AS validated,
+        COALESCE(SUM(CASE WHEN status = 'validado' THEN COALESCE(final_qty, qty) ELSE 0 END), 0) AS items,
+        COALESCE(SUM(CASE WHEN status = 'validado' THEN points ELSE 0 END), 0) AS points,
+        COALESCE(SUM(CASE WHEN status = 'recusado' THEN 1 ELSE 0 END), 0) AS refused
+      FROM disposals WHERE status IN ('validado', 'recusado') AND COALESCE(validated_at, created_at) >= ?
+      GROUP BY point_id, day`).all(since);
+    const pendingRows = db.prepare("SELECT point_id, COUNT(*) AS total FROM disposals WHERE status = 'pendente' AND expires_at > ? GROUP BY point_id")
+      .all(sqlTime(moment));
+    const sum = list => list.reduce((a, b) => a + b, 0);
+    res.json({
+      days: labels,
+      scope: req.staff.role === 'admin' ? 'all' : 'point',
+      points: scoped.map(point => {
+        const series = { validated: labels.map(() => 0), items: labels.map(() => 0), points: labels.map(() => 0), refused: labels.map(() => 0) };
+        rows.filter(row => row.point_id === point.id).forEach(row => {
+          const index = labels.indexOf(row.day);
+          if (index < 0) return;
+          series.validated[index] = row.validated; series.items[index] = row.items;
+          series.points[index] = row.points; series.refused[index] = row.refused;
+        });
+        const pending = pendingRows.find(row => row.point_id === point.id);
+        return Object.assign({ id: point.id, name: point.name }, series, {
+          totals: { validated: sum(series.validated), items: sum(series.items), points: sum(series.points), refused: sum(series.refused), pending: pending ? pending.total : 0 }
+        });
+      })
     });
   });
 

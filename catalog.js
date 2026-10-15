@@ -1,4 +1,5 @@
 const MATERIALS = [
+  { id: 'entulho', name: 'Entulho de obras', pts: 6, unit: 'saco', hint: 'Conte em sacos ou baldes. O funcionário confirma a quantidade no ponto.' },
   { id: 'papelao', name: 'Papelão / Papel', pts: 1 },
   { id: 'plastico', name: 'Plástico', pts: 5 },
   { id: 'vidro', name: 'Vidro', pts: 4 },
