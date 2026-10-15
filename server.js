@@ -76,7 +76,7 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET, uploadsD
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     contentSecurityPolicy: {
       directives: {
-        scriptSrc: ["'self'", 'https://unpkg.com', (req, res) => `'nonce-${res.locals.nonce}'`],
+        scriptSrc: ["'self'", 'https://unpkg.com', 'https://cdnjs.cloudflare.com', (req, res) => `'nonce-${res.locals.nonce}'`],
         imgSrc: ["'self'", 'data:', 'https://unpkg.com', 'https://tile.openstreetmap.org', 'https://*.tile.openstreetmap.org']
       }
     }
@@ -109,6 +109,14 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET, uploadsD
     standardHeaders: 'draft-8', legacyHeaders: false,
     keyGenerator: req => `user:${req.session.userId}`,
     message: { error: 'Muitos registros em pouco tempo. Tente novamente mais tarde.' } });
+  const staffLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 240,
+    standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: req => `user:${req.session.userId}`,
+    message: { error: 'Muitas consultas em pouco tempo. Aguarde um pouco.' } });
+  const claimLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10,
+    standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: req => `user:${req.session.userId}`,
+    message: { error: 'Muitas tentativas. Aguarde 15 minutos e tente novamente.' } });
   const page = (res, mode, error = null, values = {}, status = 200) =>
     res.status(status).render('auth', { mode, error, values });
   const authenticated = (req, res, next) => req.session.userId ? next() : res.redirect('/login');
@@ -170,7 +178,7 @@ function createApp({ databasePath, secret = process.env.SESSION_SECRET, uploadsD
     });
   });
   registerPosts(app, { db, uploadsDir, postLimiter });
-  registerActivity(app, { db, disposalLimiter });
+  registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter, adminCode: process.env.ADMIN_CODE });
   app.use((req, res) => res.status(404).send('Página não encontrada.'));
   app.use((error, req, res, next) => {
     console.error(error);
