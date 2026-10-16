@@ -11,6 +11,8 @@ const INVITE_DAYS = 7;
 const MAX_PENDING = 3;
 const MAX_OPEN_INVITES = 30;
 const DAILY_VALIDATION_LIMIT = 5;
+const ALERT_MIN_VALIDATIONS = 5;
+const ALERT_MIN_SHARE = 80;
 const LOCAL_OFFSET_MS = 3 * 3600000;
 const FLOW_PERIODS = [7, 14, 30];
 const REJECT_REASONS = ['Material diferente do declarado', 'Material não aceito neste ponto', 'Quantidade não confere', 'Outro motivo'];
@@ -93,6 +95,8 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
   const effectiveStatus = (row, nowSql) =>
     row.status === 'pendente' && row.expires_at <= nowSql ? 'expirado' : row.status;
 
+  const cancelPending = userId => db.prepare("UPDATE disposals SET status = 'cancelado' WHERE user_id = ? AND status = 'pendente'").run(userId);
+
   function staffOnly(req, res, next) {
     const user = loadUser(req.session.userId);
     if (!user) return fail(res, 401, 'Sessão expirada. Entre novamente.');
@@ -112,9 +116,11 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
     const user = loadUser(req.session.userId);
     if (!user) return fail(res, 401, 'Sessão expirada. Entre novamente.');
     const sums = totals(db, user.id);
-    const rank = sums.count === 0 ? null : 1 + db.prepare(`SELECT COUNT(*) AS higher FROM
-      (SELECT SUM(points) AS total FROM disposals WHERE status = 'validado' GROUP BY user_id) WHERE total > ?`).get(sums.earned).higher;
-    const participants = db.prepare("SELECT COUNT(DISTINCT user_id) AS total FROM disposals WHERE status = 'validado'").get().total;
+    const rank = sums.count === 0 || user.role !== 'morador' ? null : 1 + db.prepare(`SELECT COUNT(*) AS higher FROM
+      (SELECT SUM(d.points) AS total FROM disposals d JOIN users u ON u.id = d.user_id
+        WHERE d.status = 'validado' AND u.role = 'morador' GROUP BY d.user_id) WHERE total > ?`).get(sums.earned).higher;
+    const participants = db.prepare(`SELECT COUNT(DISTINCT d.user_id) AS total FROM disposals d JOIN users u ON u.id = d.user_id
+      WHERE d.status = 'validado' AND u.role = 'morador'`).get().total;
     const nowSql = sqlTime(now());
     const disposals = db.prepare(`SELECT id, material_id, material, qty, point, points, status, code, expires_at,
         final_material, final_qty, validated_at, reject_reason, created_at
@@ -137,6 +143,9 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
   });
 
   app.post('/api/disposals', apiAuth, disposalLimiter, (req, res) => {
+    const owner = loadUser(req.session.userId);
+    if (!owner) return fail(res, 401, 'Sessão expirada. Entre novamente.');
+    if (owner.role !== 'morador') return fail(res, 403, 'Contas da equipe não registram descartes nem recebem pontos.');
     const body = req.body || {};
     const material = MATERIALS.find(item => item.id === body.material);
     const point = POINTS.find(item => item.id === body.point);
@@ -175,6 +184,9 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
   });
 
   app.post('/api/redemptions', apiAuth, (req, res) => {
+    const holder = loadUser(req.session.userId);
+    if (!holder) return fail(res, 401, 'Sessão expirada. Entre novamente.');
+    if (holder.role !== 'morador') return fail(res, 403, 'Contas da equipe não resgatam recompensas.');
     const reward = REWARDS.find(item => item.id === (req.body && req.body.reward));
     if (!reward) return fail(res, 400, 'Recompensa não encontrada.');
     const { balance } = totals(db, req.session.userId);
@@ -192,6 +204,7 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
     if (!raw) return fail(res, 400, 'Digite o código de acesso.');
     if (secret && safeEqual(raw, secret)) {
       db.prepare("UPDATE users SET role = 'admin', point_id = NULL WHERE id = ?").run(user.id);
+      cancelPending(user.id);
       return res.json({ role: 'admin' });
     }
     const invite = db.prepare('SELECT code, point_id FROM invites WHERE code = ? AND used_by IS NULL AND expires_at > ?')
@@ -201,6 +214,7 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
       .run(user.id, sqlTime(now()), invite.code);
     if (!used.changes) return fail(res, 400, 'Código inválido ou expirado.');
     db.prepare("UPDATE users SET role = 'funcionario', point_id = ? WHERE id = ?").run(invite.point_id, user.id);
+    cancelPending(user.id);
     res.json({ role: 'funcionario', pointId: invite.point_id });
   });
 
@@ -208,7 +222,7 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
     const code = normalizeCode(rawCode);
     if (code.length !== CODE_LENGTH) { fail(res, 400, `Digite o código de ${CODE_LENGTH} caracteres.`); return null; }
     const row = db.prepare(`SELECT d.id, d.user_id, d.material_id, d.material, d.qty, d.point_id, d.point, d.status, d.expires_at,
-        d.created_at, d.validated_at, u.name AS resident
+        d.created_at, d.validated_at, u.name AS resident, u.role AS resident_role
       FROM disposals d JOIN users u ON u.id = d.user_id WHERE d.code = ?`).get(code);
     if (!row) { fail(res, 404, 'Código não encontrado.'); return null; }
     const status = effectiveStatus(row, sqlTime(now()));
@@ -220,6 +234,7 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
       fail(res, 403, `Este código é para outro ponto: ${row.point}.`); return null;
     }
     if (row.user_id === req.staff.id) { fail(res, 400, 'Você não pode validar o seu próprio descarte.'); return null; }
+    if (row.resident_role !== 'morador') { fail(res, 400, 'Descartes de contas da equipe não podem ser validados.'); return null; }
     return { code, row };
   }
 
@@ -332,7 +347,18 @@ function registerActivity(app, { db, disposalLimiter, staffLimiter, claimLimiter
     const staff = db.prepare("SELECT id, name, email, point_id FROM users WHERE role = 'funcionario' ORDER BY name").all();
     const invites = db.prepare(`SELECT code, point_id, expires_at FROM invites
       WHERE used_by IS NULL AND expires_at > ? ORDER BY created_at DESC, rowid DESC`).all(sqlTime(moment));
+    const alerts = db.prepare(`SELECT s.name AS staff_name, u.name AS resident_name, COUNT(*) AS total,
+        COALESCE(SUM(d.points), 0) AS points,
+        (SELECT COUNT(*) FROM disposals x WHERE x.user_id = d.user_id AND x.status = 'validado') AS resident_total
+      FROM disposals d JOIN users u ON u.id = d.user_id LEFT JOIN users s ON s.id = d.validated_by
+      WHERE d.status = 'validado' AND d.validated_by IS NOT NULL AND COALESCE(d.validated_at, d.created_at) >= ?
+      GROUP BY d.validated_by, d.user_id HAVING COUNT(*) >= ? ORDER BY total DESC, points DESC LIMIT 20`)
+      .all(sqlTime(addMs(moment, -30 * 86400000)), ALERT_MIN_VALIDATIONS)
+      .map(row => ({ staff: shortName(row.staff_name || '—'), resident: shortName(row.resident_name), total: row.total, points: row.points,
+        share: Math.round(100 * row.total / Math.max(1, row.resident_total)) }))
+      .filter(row => row.share >= ALERT_MIN_SHARE);
     res.json({
+      alerts,
       points: POINTS.map(point => {
         const row = stats.find(item => item.point_id === point.id) || {};
         return { id: point.id, name: point.name, validated: row.validated || 0, items: row.items || 0, points: row.points || 0, refused: row.refused || 0 };
