@@ -23,12 +23,12 @@ const POINTS = [
 ];
 
 const REWARDS = [
-  { id: 'r1', name: 'Bonus 10R$ em recarga', cost: 100 },
-  { id: 'r2', name: 'Vale refeição (Restaurantes parceiros)', cost: 150 },
-  { id: 'r3', name: 'Passagem de ônibus municipal', cost: 200 },
-  { id: 'r4', name: 'Desconto IPTU', cost: 300 },
-  { id: 'r5', name: 'Desconto IPVA', cost: 400 },
-  { id: 'r6', name: 'Vale compras; valor 100R$', cost: 500 }
+  { id: 'r7', name: 'Bolo de pote — Delícias da Taty', cost: 70 },
+  { id: 'r2', name: 'Vale-refeição (restaurantes parceiros)', cost: 150 },
+  { id: 'r3', name: 'Passagem de ônibus municipal', cost: 100 },
+  { id: 'r4', name: 'Desconto no IPTU', cost: 300 },
+  { id: 'r6', name: 'Vale-compras: R$ 50 de desconto a cada R$ 200 em compras', cost: 300 },
+  { id: 'r8', name: 'Muda de hortaliça', cost: 30 }
 ];
 
 const catalogJson = JSON.stringify({ materials: MATERIALS, points: POINTS, rewards: REWARDS })
